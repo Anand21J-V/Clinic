@@ -1,0 +1,98 @@
+import os
+import streamlit as st
+import pandas as pd
+import time
+import re
+from dotenv import load_dotenv
+
+from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains import create_retrieval_chain
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_groq import ChatGroq
+
+# Load environment variables
+load_dotenv()
+groq_api_key = "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"
+
+# Load LLM
+llm = ChatGroq(groq_api_key=groq_api_key, model_name="llama-3.3-70b-versatile")
+
+# Streamlit UI setup
+st.set_page_config(page_title="Clinical Trial Insight Assistant", layout="wide")
+st.title("🧪 Clinical Trial Semantic Insight Generator")
+
+# File path to your clinical data
+clinical_csv_path = "ctg-studies.csv"  # <-- update this with actual CSV path
+
+def preprocess_data(csv_path):
+    try:
+        df = pd.read_csv(csv_path)
+
+        # Combine the four required fields into one
+        def combine_fields(row):
+            return (
+                f"Study Title: {row.get('Study Title', '')}\n"
+                f"Primary Outcome: {row.get('Primary Outcome Measure', '')}\n"
+                f"Secondary Outcome: {row.get('Secondary Outcome Measure', '')}\n"
+                f"Eligibility Criteria: {row.get('Eligibility Criteria', '')}"
+            )
+
+        df['combined_text'] = df.apply(combine_fields, axis=1)
+
+        documents = [Document(page_content=text) for text in df['combined_text'].tolist()]
+        return documents
+    except Exception as e:
+        st.error(f"Error reading or processing CSV: {e}")
+        return []
+
+# Load and embed documents
+def load_vector_db():
+    if "vectors" not in st.session_state:
+        docs = preprocess_data(clinical_csv_path)
+
+        if not docs:
+            st.error("No valid documents to process.")
+            return
+
+        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        split_docs = splitter.split_documents(docs)
+        vector_store = FAISS.from_documents(split_docs, embeddings)
+        st.session_state.vectors = vector_store
+
+# Prompt for RAG
+prompt = ChatPromptTemplate.from_template("""
+Answer the question using the following context. Be concise and insightful.
+<context>
+{context}
+</context>
+
+Question: {input}
+""")
+
+# Query input
+query = st.text_input("🔍 Ask about clinical trials, outcomes, or patterns...")
+
+# Inference
+if query:
+    load_vector_db()
+
+    if "vectors" in st.session_state:
+        retriever = st.session_state.vectors.as_retriever(search_kwargs={"k": 5})
+        document_chain = create_stuff_documents_chain(llm, prompt)
+        rag_chain = create_retrieval_chain(retriever, document_chain)
+
+        start = time.process_time()
+        output = rag_chain.invoke({'input': query})
+        answer = output['answer']
+        elapsed = round(time.process_time() - start, 2)
+
+        st.markdown("### 🧠 RAG-Generated Answer:")
+        st.success(answer)
+        st.markdown(f"⏱ Time Taken: {elapsed} sec")
+    else:
+        st.error("Failed to load vector DB.")
