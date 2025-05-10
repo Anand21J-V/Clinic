@@ -10,15 +10,15 @@ import time
 # Load environment variables
 load_dotenv()
 
-# Path to your JSON file
-clinical_json_path = "ctg-studies.json"  # <- Update with your real file
+# Path to your CSV file
+clinical_csv_path = "ctg-studies (1).csv"  # Updated path to CSV
 
 # Output FAISS vector DB path
 save_path = "faiss_index"
 
-def preprocess_data(json_path):
+def preprocess_data(csv_path):
     try:
-        df = pd.read_json(json_path)
+        df = pd.read_csv(csv_path)
 
         def combine_fields(row):
             return (
@@ -37,7 +37,7 @@ def preprocess_data(json_path):
         documents = [Document(page_content=text) for text in df['combined_text'].tolist()]
         return documents
     except Exception as e:
-        print(f"Error reading JSON: {e}")
+        print(f"Error reading CSV: {e}")
         return []
 
 def build_and_save_vector_store(docs, save_path="faiss_index"):
@@ -45,12 +45,10 @@ def build_and_save_vector_store(docs, save_path="faiss_index"):
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     split_docs = splitter.split_documents(docs)
     
-    # Check if the FAISS index already exists
     if os.path.exists(save_path):
         print(f"⚠️ Vector store already exists at {save_path}. Skipping re-building.")
         return
 
-    # If FAISS index does not exist, proceed with creating it
     start_time = time.time()
     vector_store = FAISS.from_documents(split_docs, embeddings)
     vector_store.save_local(save_path)
@@ -60,6 +58,6 @@ def build_and_save_vector_store(docs, save_path="faiss_index"):
     print(f"⏱ Time taken for vector store creation: {elapsed_time} seconds")
 
 if __name__ == "__main__":
-    docs = preprocess_data(clinical_json_path)
+    docs = preprocess_data(clinical_csv_path)
     if docs:
         build_and_save_vector_store(docs, save_path)
