@@ -5,22 +5,15 @@ import time
 
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.chains import create_retrieval_chain
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_groq import ChatGroq
 
 # Load environment variables
 load_dotenv()
-groq_api_key = "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"
 
-# Load LLM
-llm = ChatGroq(groq_api_key=groq_api_key, model_name="llama-3.3-70b-versatile")
-
-# Streamlit UI
+# Streamlit UI Config
 st.set_page_config(page_title="Clinical Trial Insight Assistant", layout="wide")
 st.title("🧠 Semantic Insight Engine for Clinical Trials")
 
+# Form Inputs
 with st.form("input_form"):
     col1, col2 = st.columns(2)
     with col1:
@@ -36,6 +29,7 @@ with st.form("input_form"):
 
     submitted = st.form_submit_button("🔍 Get Top 10 Similar Studies")
 
+# Load Vector DB
 def load_vector_db():
     if "vectors" not in st.session_state:
         try:
@@ -45,27 +39,11 @@ def load_vector_db():
         except Exception as e:
             st.error(f"❌ Failed to load vector DB from disk: {e}")
 
-# Prompt Template
-prompt = ChatPromptTemplate.from_template("""
-You are a semantic retriever for clinical trials. Based on the trial design criteria below, find the top 10 semantically similar historical studies.
-Return full metadata (all available fields) in JSON format for each.
-
-Trial Design Criteria:
-{input}
-
-Search Context:
-{context}
-""")
-
-# RAG Chain
+# Process Input and Display JSON Results
 if submitted:
     load_vector_db()
 
     if "vectors" in st.session_state:
-        retriever = st.session_state.vectors.as_retriever(search_kwargs={"k": 10})
-        document_chain = create_stuff_documents_chain(llm, prompt)
-        rag_chain = create_retrieval_chain(retriever, document_chain)
-
         user_input = f"""
         Study Title: {study_title}
         Conditions: {conditions}
@@ -77,12 +55,18 @@ if submitted:
         Locations: {locations}
         """
 
+        retriever = st.session_state.vectors.as_retriever(search_kwargs={"k": 10})
+
         start = time.process_time()
-        result = rag_chain.invoke({'input': user_input})
+        results = retriever.invoke(user_input)
         elapsed = round(time.process_time() - start, 2)
 
-        st.markdown("### 🎯 Top 10 Semantically Relevant Studies (Full Metadata)")
-        st.json(result["answer"])
+        st.markdown("### 🎯 Top 10 Semantically Relevant Studies (JSON Format)")
+
+        for i, doc in enumerate(results, 1):
+            st.subheader(f"🔹 Study {i}")
+            st.json(doc.metadata)
+
         st.caption(f"⏱ Time Taken: {elapsed} sec")
     else:
         st.error("Vector DB not available. Please check the backend.")
