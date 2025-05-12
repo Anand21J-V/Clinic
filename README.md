@@ -1,6 +1,4 @@
-
-````markdown
-# 🧠 Semantic Insight Engine for Clinical Trials
+#Semantic Insight Engine for Clinical Trials
 
 This project is a **Streamlit-based semantic search engine** designed to help users find the top 10 most semantically similar clinical trial studies based on form input fields like study title, condition, outcomes, sponsor, etc.
 
