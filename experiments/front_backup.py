@@ -1,3 +1,5 @@
+## NORMAL JSON OUTPUT
+
 import os
 import streamlit as st
 from dotenv import load_dotenv
@@ -11,38 +13,27 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# Page config
-st.set_page_config(page_title="🧪 Clinical Trial Insight Assistant", layout="wide")
-st.markdown("<h1 style='text-align: center; color: #4B8BBE;'>🧠 Semantic Insight Engine for Clinical Trials</h1>", unsafe_allow_html=True)
-st.markdown("---")
+# Streamlit UI Config
+st.set_page_config(page_title="Clinical Trial Insight Assistant", layout="wide")
+st.title("🧠 Semantic Insight Engine for Clinical Trials")
 
-# Sidebar Info
-with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=100)
-    st.markdown("### ℹ️ Instructions")
-    st.write("Fill in the form and get top 10 semantically similar clinical studies based on your input.")
-    st.markdown("Powered by **FAISS + HuggingFace + GROQ + LangChain**")
-    st.markdown("---")
-    st.caption("Developed by Team DataVerse")
-
-# Main Form
+# Form Inputs
 with st.form("input_form"):
-    st.markdown("### 📝 Enter Clinical Study Details")
     col1, col2 = st.columns(2)
     with col1:
-        study_title = st.text_input("📌 Study Title")
-        conditions = st.text_input("🧬 Conditions")
-        primary_outcome = st.text_input("🎯 Primary Outcome Measures")
-        sex = st.selectbox("⚥ Sex", ["", "Male", "Female", "All"])
+        study_title = st.text_input("Study Title")
+        conditions = st.text_input("Conditions")
+        primary_outcome = st.text_input("Primary Outcome Measures")
+        sex = st.text_input("Sex")
     with col2:
-        age = st.text_input("🎂 Age")
-        study_type = st.selectbox("📖 Study Type", ["", "Observational", "Interventional", "Expanded Access"])
-        sponsor = st.text_input("🏥 Sponsor")
-        locations = st.text_input("📍 Locations")
+        age = st.text_input("Age")
+        study_type = st.text_input("Study Type")
+        sponsor = st.text_input("Sponsor")
+        locations = st.text_input("Locations")
 
     submitted = st.form_submit_button("🔍 Get Top 10 Similar Studies")
 
-# Vector DB Loader
+# Load Vector DB
 def load_vector_db():
     if "vectors" not in st.session_state:
         try:
@@ -50,17 +41,22 @@ def load_vector_db():
             vector_store = FAISS.load_local("faiss_index", embeddings, allow_dangerous_deserialization=True)
             st.session_state.vectors = vector_store
         except Exception as e:
-            st.error(f"❌ Failed to load vector DB: {e}")
+            st.error(f"❌ Failed to load vector DB from disk: {e}")
 
-# Summary via GROQ
+# Call GROQ API for summary generation
 def get_summary_from_groq(metadata_dict):
     try:
         prompt = f"""
         You are a helpful assistant. Summarize the following clinical trial information in simple English in 1 paragraph:
+
         {metadata_dict}
         """
+
         url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        }
         data = {
             "model": "llama-3.3-70b-versatile",
             "messages": [{"role": "user", "content": prompt}],
@@ -69,11 +65,13 @@ def get_summary_from_groq(metadata_dict):
 
         response = requests.post(url, json=data, headers=headers)
         response.raise_for_status()
-        return response.json()['choices'][0]['message']['content'].strip()
+        result = response.json()
+        summary = result['choices'][0]['message']['content']
+        return summary.strip()
     except Exception as e:
         return f"Summary generation failed: {e}"
 
-# Main logic
+# Main Logic
 if submitted:
     load_vector_db()
 
@@ -90,22 +88,30 @@ if submitted:
         """
 
         retriever = st.session_state.vectors.as_retriever(search_kwargs={"k": 10})
+
         start = time.process_time()
         results = retriever.invoke(user_input)
         elapsed = round(time.process_time() - start, 2)
 
-        st.success("✅ Retrieval Successful")
-        st.markdown("## 🔍 Top 10 Matched Clinical Studies")
+        st.markdown("### 🎯 Top 10 Semantically Relevant Studies (JSON Format)")
 
         for i, doc in enumerate(results, 1):
             metadata = doc.metadata
+
+            # Add Semantic Similarity Score if available
             score = getattr(doc, 'score', None)
-            metadata["semantic_similarity_score"] = round(score, 4) if score else "N/A"
-            metadata["summary"] = get_summary_from_groq(metadata)
+            if score is not None:
+                metadata["semantic_similarity_score"] = round(score, 4)
+            else:
+                metadata["semantic_similarity_score"] = "Not available"
 
-            with st.expander(f"🔹 Study {i}: {metadata.get('Study Title', 'No Title')}"):
-                st.json(metadata)
+            # Add Summary using GROQ
+            summary = get_summary_from_groq(metadata)
+            metadata["summary"] = summary
 
-        st.info(f"⏱ Time Taken: `{elapsed} seconds`")
+            st.subheader(f"🔹 Study {i}")
+            st.json(metadata)
+
+        st.caption(f"⏱ Time Taken: {elapsed} sec")
     else:
-        st.error("🚫 Vector DB not loaded. Please try again.")
+        st.error("Vector DB not available. Please check the backend.")
